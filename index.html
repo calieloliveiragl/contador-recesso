@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contagem regressiva para o recesso</title>
+<style>
+  :root {
+    --red: #b3202a;
+    --dark-red: #7a1018;
+    --ink: #111111;
+    --card: #f7f7f7;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: #fff; }
+  body { font-family: "Montserrat", "Poppins", "Segoe UI Black", "Arial Black", Arial, sans-serif; }
+
+  /* Palco fixo em 1920x1080, escalado para caber em qualquer janela */
+  #stage {
+    position: absolute; left: 50%; top: 50%;
+    width: 1920px; height: 1080px;
+    transform-origin: center; transform: translate(-50%, -50%) scale(1);
+    background: #fff; overflow: hidden;
+  }
+  #stage svg.art { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .dots {
+    position: absolute; left: 60px; top: 120px; width: 560px; height: 700px;
+    background-image: radial-gradient(#9a9a9a 2.2px, transparent 2.6px);
+    background-size: 14px 14px; opacity: .45;
+    -webkit-mask-image: radial-gradient(ellipse at 40% 50%, #000 25%, transparent 70%);
+            mask-image: radial-gradient(ellipse at 40% 50%, #000 25%, transparent 70%);
+  }
+
+  .content {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center;
+  }
+  .top { font-size: 110px; font-weight: 800; letter-spacing: 2px; color: var(--ink); line-height: 1; }
+  .bottom { font-size: 84px; font-weight: 800; line-height: 1.1; color: var(--ink); margin-top: 28px; }
+  .bottom em, .lbl-dias em { font-style: normal; color: var(--red); }
+  .rule { width: 230px; height: 3px; background: var(--dark-red); margin-top: 26px; }
+
+  #painel { display: flex; flex-direction: column; align-items: center; }
+  .lbl-dias { font-size: 54px; font-weight: 800; color: var(--ink); line-height: 1; margin: 12px 0 28px; }
+
+  .digits { display: flex; gap: 32px; margin-top: 30px; }
+  .card {
+    width: 210px; height: 270px; border-radius: 20px;
+    border: 3px solid var(--dark-red); background: #fff; padding: 12px;
+    perspective: 900px;
+  }
+  .face {
+    --r: 11px;
+    position: relative; width: 100%; height: 100%; border-radius: var(--r);
+    perspective: 700px;
+    font-size: 225px; font-weight: 800; color: var(--red); line-height: 1;
+    background:
+      linear-gradient(115deg, var(--dark-red) 0 11%, transparent 11.4%),
+      linear-gradient(115deg, transparent 0 11%, #fff 11.4% 24%, transparent 24.4%),
+      linear-gradient(300deg, var(--red) 0 8%, transparent 8.4%),
+      var(--card);
+    box-shadow: 0 5px 12px rgba(0,0,0,.18);
+  }
+  /* linha central do cartão */
+  .face::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px;
+    background: rgba(0,0,0,.2); z-index: 5; pointer-events: none;
+  }
+  /* cada metade repete o fundo do cartão, para a plaquinha ficar idêntica */
+  .half {
+    position: absolute; left: 0; right: 0; height: 50%; overflow: hidden;
+    background: inherit; background-size: 100% 200%;
+    backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  }
+  .half.t { top: 0;    border-radius: var(--r) var(--r) 0 0; background-position: 0 0; }
+  .half.b { bottom: 0; border-radius: 0 0 var(--r) var(--r); background-position: 0 100%; }
+  .half .d {
+    position: absolute; left: 0; right: 0; height: 200%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .half.t .d { top: 0; }
+  .half.b .d { bottom: 0; }
+
+  .flap { z-index: 2; will-change: transform; }
+  /* 1) a plaquinha de cima (número antigo) cai até o meio */
+  .cai  { transform-origin: 50% 100%; animation: cai .32s cubic-bezier(.55,0,.9,.6) forwards; }
+  /* 2) a plaquinha de baixo (número novo) termina de descer */
+  .sobe { transform-origin: 50% 0; animation: sobe .32s .32s cubic-bezier(.1,.5,.3,1) backwards; }
+  @keyframes cai  { from { transform: rotateX(0);     filter: brightness(1);  } to { transform: rotateX(-90deg); filter: brightness(.5); } }
+  @keyframes sobe { from { transform: rotateX(90deg); filter: brightness(.6); } to { transform: rotateX(0);      filter: brightness(1);  } }
+
+  /* Relógio (horas, minutos, segundos) */
+  .clock { display: flex; align-items: flex-start; gap: 18px; }
+  .unit { display: flex; flex-direction: column; align-items: center; }
+  .unit .digits { margin-top: 0; gap: 8px; }
+  .small .card { width: 92px; height: 120px; border-width: 2px; border-radius: 11px; padding: 6px; }
+  .small .face { --r: 6px; background: var(--card); font-size: 98px; box-shadow: 0 2px 6px rgba(0,0,0,.18); }
+  .small .face::after { height: 1.5px; margin-top: -.75px; }
+  .lbl { font-size: 20px; font-weight: 800; letter-spacing: 3px; color: var(--dark-red); margin-top: 8px; white-space: nowrap; }
+  .sep { height: 120px; display: flex; align-items: center; font-size: 76px; font-weight: 800; color: var(--red); }
+
+  .fim #painel { display: none; }
+
+  @media (prefers-reduced-motion: reduce) { .flap { display: none; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="dots"></div>
+  <svg class="art" viewBox="0 0 1920 1080" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M1480 0 H1920 V560 C1860 380 1700 160 1480 0Z" fill="#8c1520"/>
+    <path d="M1700 0 H1920 V330 C1880 220 1800 90 1700 0Z" fill="#6b0c14"/>
+    <path d="M0 760 C260 800 520 960 700 1080 H0Z" fill="#c4202b"/>
+    <path d="M0 900 C200 930 330 1000 420 1080 H0Z" fill="#8c1520"/>
+    <path d="M0 740 C300 760 600 920 780 1080" stroke="#bdbdbd" stroke-width="3" fill="none"/>
+    <path d="M1100 20 C1500 80 1800 300 1920 520" stroke="#bdbdbd" stroke-width="3" fill="none"/>
+  </svg>
+
+  <main class="content" id="content">
+    <div class="top" id="top">FALTAM</div>
+    <div id="painel">
+      <div class="digits" id="dias"></div>
+      <div class="lbl-dias" id="lblDias">DIAS</div>
+      <div class="clock">
+        <div class="unit"><div class="digits small" id="horas"></div><div class="lbl">HORAS TOTAIS</div></div>
+        <div class="sep">:</div>
+        <div class="unit"><div class="digits small" id="min"></div><div class="lbl">MIN</div></div>
+        <div class="sep">:</div>
+        <div class="unit"><div class="digits small" id="seg"></div><div class="lbl">SEG</div></div>
+      </div>
+    </div>
+    <div class="bottom" id="bottom">PARA <em>O RECESSO.</em></div>
+    <div class="rule"></div>
+  </main>
+</div>
+
+<script>
+  // ====== CONFIGURE AQUI ======
+  // Momento exato do recesso: (ano, mês, dia, hora, minuto).
+  // Atenção: o mês vai de 0 a 11 (dezembro = 11).
+  const ALVO = new Date(2026, 11, 18, 18, 0, 0);
+  // ============================
+
+  const $ = id => document.getElementById(id);
+  const REDUZIR = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Cada cartão tem 2 metades fixas (de cima e de baixo). Na troca, a metade de cima
+  // com o número antigo cai até o meio e revela o novo; depois a metade de baixo
+  // com o número novo termina de descer — o efeito clássico de relógio de plaquinhas.
+  function metade(cls, txt) {
+    const h = document.createElement('div'); h.className = 'half ' + cls;
+    const d = document.createElement('span'); d.className = 'd'; d.textContent = txt;
+    h.appendChild(d); return h;
+  }
+
+  function trocar(face, novo, animar) {
+    face.querySelectorAll('.flap').forEach(x => x.remove());
+    const velho = face.dataset.v || '';
+    const topo = face.querySelector('.base.t .d'), base = face.querySelector('.base.b .d');
+    topo.textContent = novo;
+    face.dataset.v = novo;
+    if (!animar) { base.textContent = novo; return; }
+    base.textContent = velho;
+    const cai = metade('t flap cai', velho), sobe = metade('b flap sobe', novo);
+    sobe.addEventListener('animationend', () => { base.textContent = novo; cai.remove(); sobe.remove(); });
+    face.appendChild(cai); face.appendChild(sobe);
+  }
+
+  function atualizarGrupo(id, texto) {
+    const el = $(id);
+    if (el.children.length !== texto.length) {
+      el.innerHTML = '';
+      for (let i = 0; i < texto.length; i++) {
+        const c = document.createElement('div'); c.className = 'card';
+        const f = document.createElement('div'); f.className = 'face';
+        f.appendChild(metade('t base', '')); f.appendChild(metade('b base', ''));
+        c.appendChild(f); el.appendChild(c);
+      }
+      el.dataset.v = '';
+    }
+    const antigo = el.dataset.v || '';
+    [...texto].forEach((d, i) => {
+      const face = el.children[i].firstChild;
+      if (face.dataset.v !== d) trocar(face, d, antigo !== '' && !REDUZIR);
+    });
+    el.dataset.v = texto;
+  }
+
+  const dois = n => String(n).padStart(2, '0');
+
+  function render() {
+    const diff = ALVO.getTime() - Date.now();
+
+    if (diff <= 0) {
+      document.body.classList.add('fim');
+      $('top').textContent = 'CHEGOU A HORA!';
+      $('bottom').innerHTML = '<em>BOM RECESSO!</em>';
+      return;
+    }
+    document.body.classList.remove('fim');
+
+    const dias = Math.floor(diff / 86400000);
+    const horas = Math.floor(diff / 3600000);          // total de horas corridas
+    const min = Math.floor(diff % 3600000 / 60000);
+    const seg = Math.floor(diff % 60000 / 1000);
+
+    atualizarGrupo('dias', dois(dias));
+    atualizarGrupo('horas', dois(horas));
+    atualizarGrupo('min', dois(min));
+    atualizarGrupo('seg', dois(seg));
+
+    $('top').textContent = dias === 1 ? 'FALTA' : 'FALTAM';
+    $('lblDias').textContent = dias === 1 ? 'DIA' : 'DIAS';
+    $('bottom').innerHTML = 'PARA <em>O RECESSO.</em>';
+  }
+
+  function ajustarEscala() {
+    const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+    $('stage').style.transform = 'translate(-50%, -50%) scale(' + s + ')';
+  }
+
+  render(); ajustarEscala();
+  setInterval(render, 250);   // calcula pelo relógio do Windows, então não "atrasa"
+  addEventListener('resize', ajustarEscala);
+</script>
+</body>
+</html>
